@@ -2,13 +2,16 @@ cabal-version: >= 1.10
 
 name:           sbv-program
 version:        1.0.0.0
-description:    Component-based program synthesis using SBV
+category:       SMT, Symbolic Computation, Bit vectors, Formal Methods
+synopsis:       Component-based program synthesis using SBV
+description:    Given a library of available componen functions, synthesize a program implementing a specification.
 homepage:       https://github.com/arrowd/sbv-program
 bug-reports:    https://github.com/arrowd/sbv-program/issues
 author:         Gleb Popov
 maintainer:     6yearold@gmail.com
 copyright:      2023 Gleb Popov
 license:        BSD3
+license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
     README.md
@@ -27,7 +30,7 @@ library
   hs-source-dirs:
       src
   build-depends:
-      base
+      base < 5
       , bifunctors
       , containers
       , pretty-simple
