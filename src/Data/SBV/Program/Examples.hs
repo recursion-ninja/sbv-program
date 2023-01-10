@@ -14,7 +14,7 @@ import Data.SBV.Program
 import Data.SBV.Program.SimpleLibrary as Lib
 
 -- | A running example from the original paper. The function should reset the
--- most significant set bit of a 8-byte word:
+-- least significant set bit of a 8-byte word:
 -- >>> 0001 0010 -> 0000 0010
 paperRunningExampleSpec :: SimpleSpec Word8
 paperRunningExampleSpec = SimpleSpec 1 $ \[i] o -> sAnd $ flip map [7,6..0] $ \t ->
