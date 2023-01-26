@@ -1,8 +1,7 @@
 cabal-version: >= 1.10
 
 name:           sbv-program
-version:        1.0.0.0
-x-revision:     1
+version:        1.1.0.0
 category:       SMT, Symbolic Computation, Bit vectors, Formal Methods
 synopsis:       Component-based program synthesis using SBV
 description:    Given a library of available componen functions, synthesize a program implementing a specification.
