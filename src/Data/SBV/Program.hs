@@ -35,6 +35,12 @@ module Data.SBV.Program (
   constrainLocs,
   createProgramVarsWith,
   createVarsConstraints,
+
+  -- * Constant components handling #constants#
+
+  createConstantVars,
+  combineProgramVars,
+  instructionGetValue
   )
 where
 
@@ -69,7 +75,8 @@ data STuple a = STuple {
 -- As stated in the paper, this implementation boils down to exhaustive enumeration
 -- of possible solutions, and as such isn't effective. It can be used to better
 -- understand how the synthesis procedure works and provides a lot of debugging
--- output. Do not use this procedure for solving real problems.
+-- output. It also doesn't support constant components. Do not use this procedure
+-- for solving real problems.
 standardExAllProcedure :: forall a comp spec .
   (SymVal a, Show a, SynthSpec spec a, SynthComponent comp spec a) =>
     -- | Component library
@@ -183,24 +190,36 @@ refinedExAllProcedure library spec = do
   mbRes <- sampleSpec spec
   case mbRes of
     Nothing -> return $ Left ErrorSeedingFailed
-    Just r -> go 1 ([_ins r] :: [[a]])
+    Just r -> go ([_ins r] :: [[a]])
   where
     n = genericLength library
     numInputs = specArity spec
     m = n + numInputs
-    go step s = do
+    go s = do
       -- Finite synthesis part
       r <- runSMT $ do
         progLocs <- createProgramLocs library numInputs
 
         constrainLocs m numInputs progLocs
 
-        -- Unlike 'exAllProcedure' here we call 'createProgramVarsWith' multiple times
+        -- Not part of the original paper.
+        -- Here we create existentially quantified variables for constant components.
+        -- These variables represent actual value that the component returns.
+        -- The returned 'Program' is filled with 'undefined' values for non-constant
+        -- components.
+        progConsts <- createConstantVars library
+
+        -- Unlike 'exAllProcedure' here we call 'createProgramVarsWith' multiple times.
         -- Since we aren't using forall quantifier, we have to create variables
         -- for each I vector in s.
         manyProgVars <- forM s $ \inputVars_s -> do
           let numInputs = genericLength inputVars_s
-          progVars <- createProgramVarsWith sbvExists library numInputs
+          progVars0 <- createProgramVarsWith sbvExists library numInputs
+
+          -- Not part of the original paper.
+          -- Combine variables of constant components with variable of non-constant ones.
+          -- The resulting program will not contain 'undefined' values anymore.
+          let progVars = combineProgramVars progConsts progVars0
 
           -- pin input variables (members of I set) to values from S
           constrain $ fmap literal inputVars_s .== _ins (programIOs progVars)
@@ -215,20 +234,44 @@ refinedExAllProcedure library spec = do
         query $ do
           r <- checkSat
           case r of
-            Sat -> Right <$> bitraverse getValue pure progLocs
+            Sat -> do
+              -- We could've just call 'bimapM getValue pure' to get all solutions
+              -- at once, but in presence of constant components we have to do
+              -- a bit more manual work.
+              inputLocVals <- mapM getValue (_ins $ programIOs progLocs)
+              outputLocVal <- getValue (_out $ programIOs progLocs)
+              -- Carefully extract solutions for component location vars.
+              -- The 'instructionGetValue' function selectively calls 'getValue'
+              -- either on left-hand 'Program' or right-hand 'Program' depending
+              -- on component's constness.
+              componentLocVals <- zipWithM instructionGetValue (programInstructions progLocs) (programInstructions progConsts)
+              constantVals <- mapM (getValue . _out . instructionIOs) (filter (isConstantComponent . instructionComponent) (programInstructions progConsts))
+
+              let currL = Program (IOs inputLocVals outputLocVal) componentLocVals
+              return $ Right (currL, constantVals)
             _ -> return $ Left ErrorUnsat
       -- Verification part
       -- At this stage the 'currL' program represents a solution that is known to
       -- work for all values from S. We now check if this solution works for all
       -- values possible.
-      fmap join $ for r $ \currL -> runSMT $ do
+      fmap join $ for r $ \(currL, constantVals) -> runSMT $ do
         progLocs <- createProgramLocs library numInputs
 
         -- In the verification part we pin location variables L
         constrain $ (literal <$> programIOs currL) .== programIOs progLocs
         constrain $ sAnd $ zipWith (\x y -> literal x .== y) (concatMap (toList .instructionIOs) (programInstructions currL)) (concatMap (toList .instructionIOs) (programInstructions progLocs))
 
-        progVars <- createProgramVarsWith sbvExists library numInputs
+        -- For constant components we also pin their return values.
+        progConsts <- createConstantVars library
+        constrain $
+          map (_out . instructionIOs) (filter (isConstantComponent . instructionComponent) (programInstructions progConsts))
+          .==
+          map literal constantVals
+
+        -- We want to find at least one set of inputs that doesn't work for our
+        -- current design, hence existential quantification.
+        progVars0 <- createProgramVarsWith sbvExists library numInputs
+        let progVars = combineProgramVars progConsts progVars0
 
         let (Program (IOs inputVars outputVar) componentVars) = progVars
             (psi_conn, phi_lib) = createVarsConstraints progLocs progVars
@@ -238,12 +281,14 @@ refinedExAllProcedure library spec = do
         query $ do
           r <- checkSat
           case r of
+            -- We were unable to find any counterexamples, which means that
+            -- our design works for all inputs. Return it.
             Unsat -> return $ Right currL
+            -- We found a set of input assignments that makes our design return
+            -- wrong values. Add this set to 's' and go to the next iteration.
             Sat -> do
               inputVals <- mapM getValue inputVars
-              outputVal <- getValue outputVar
-              componentVals <- mapM (traverse getValue . instructionIOs) componentVars
-              io $ go (step + 1) $ inputVals : s
+              io $ go $ inputVals : s
 
 -- | This procedure is not part of the paper. It uses forall quantification directly
 -- when creating variables from the \(T\) set. As consequence it requires an SMT-solver
@@ -268,7 +313,10 @@ exAllProcedure library spec =
 
     constrainLocs m numInputs progLocs
 
-    progVars <- createProgramVarsWith sbvForall library numInputs
+    -- Not part of the original paper. See comments for the similar call in 'refinedExAllProcedure'.
+    progConsts <- createConstantVars library
+    progVars0 <- createProgramVarsWith sbvForall library numInputs
+    let progVars = combineProgramVars progConsts progVars0
 
     let (Program (IOs inputVars outputVar) _) = progVars
         (psi_conn, phi_lib) = createVarsConstraints progLocs progVars
@@ -281,8 +329,9 @@ exAllProcedure library spec =
         Sat -> do
           inputLocVals <- mapM getValue (_ins $ programIOs progLocs)
           outputLocVal <- getValue (_out $ programIOs progLocs)
-          componentLocVals <- traverse (bimapM getValue pure) (programInstructions progLocs)
-          return $ Right $ Program (IOs inputLocVals outputLocVal) (sortOn (_out . instructionIOs) componentLocVals)
+          -- Careful solution extraction. See comments for the similar call in 'refinedExAllProcedure'.
+          componentLocVals <- zipWithM instructionGetValue (programInstructions progLocs) (programInstructions progConsts)
+          return $ Right $ Program (IOs inputLocVals outputLocVal) componentLocVals
         Unsat -> return $ Left ErrorUnsat
         Unk -> do
           reason <- getUnknownReason
@@ -385,3 +434,63 @@ createVarsConstraints progLocs progVars = (psi_conn, phi_lib)
     phi_lib = sAnd $ flip map (programInstructions progVars) $
         \(Instruction (IOs inputVars outputVar) comp) -> specFunc (compSpec comp) inputVars outputVar
 
+
+-- | Special version of 'createProgramVarsWith' for constant components.
+-- A constant component is a component having 'specArity' \(=0\). The original
+-- paper slightly touches this topic in the last paragraph of section 7.
+-- This function always uses existential quantification and only operates on
+-- constant components. The 'Program' returned from this function contains
+-- 'undefined' values for 'programIOs' and non-constant 'programInstructions'.
+-- The user is expected to call 'createProgramVarsWith' later and then use
+-- 'combineProgramVars' to merge two results.
+createConstantVars :: forall a comp spec . (SymVal a, SynthSpec spec a, SynthComponent comp spec a) =>
+  -- | Component library.
+     [comp a]
+  -> Symbolic (Program (SBV a) (comp a))
+createConstantVars library = do
+  componentVars <- forM library $ \comp -> do
+    if isConstantComponent comp
+      then do
+         compOutputVar <- sbvExists $ mkOutputVarName $ compName comp
+         return $ Instruction (IOs [] compOutputVar) comp
+      else return $ Instruction undefined comp
+
+  return $ Program undefined componentVars
+
+
+-- | Given a 'Program' of constant-only components and a 'Program' of non-constant
+-- components, combine them into a single 'Program'.
+combineProgramVars :: forall a comp spec . (SymVal a, SynthSpec spec a, SynthComponent comp spec a) =>
+  -- | The result of 'createConstantVars'
+     Program (SBV a) (comp a)
+  -- | The result of 'createProgramVarsWith'
+  -> Program (SBV a) (comp a)
+  -> Program (SBV a) (comp a)
+combineProgramVars lhProgram rhProgram = Program (programIOs rhProgram) $
+    zipWith selectInstruction (programInstructions lhProgram) (programInstructions rhProgram)
+  where
+    selectInstruction lhInst rhInst =
+      if specArity (compSpec $ instructionComponent lhInst) == 0
+        then lhInst
+        else rhInst
+
+
+-- | Smart version of 'getValue' for 'Instruction'.
+-- For each component it gets solutions for location variable, effectively turning
+-- 'Instruction SLocation (comp a)' into 'Instruction Location (comp a)'.
+-- For constant components it additionaly fills 'comp a' part of the structure
+-- with its returning value.
+instructionGetValue :: forall a comp spec m . (SymVal a, SynthSpec spec a, SynthComponent comp spec a) =>
+     Instruction SLocation (comp a)
+  -> Instruction (SBV a) (comp a)
+  -> Query (Instruction Location (comp a))
+instructionGetValue instLocs instVars = do
+  locVals <- traverse getValue (instructionIOs instLocs)
+  comp <- let comp = instructionComponent instLocs
+          in if isConstantComponent comp
+            then do
+              constValue <- getValue $ _out $ instructionIOs instVars
+              return $ putConstValue comp constValue
+            else
+              return comp
+  return $ Instruction locVals comp

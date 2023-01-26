@@ -15,6 +15,7 @@ module Data.SBV.Program.Types (
 
   SimpleSpec(..),
   SimpleComponent(..),
+  mkSimpleComp,
 
   SynthesisError(..),
 
@@ -70,10 +71,18 @@ class SynthSpec spec a => SynthComponent comp spec a | comp -> spec where
   compSpec :: comp a -> spec a
   -- | Optional constraints to set on __location variables__ \(l_x \in L\).
   extraLocConstrs :: comp a -> [[SLocation] -> SLocation -> SBool]
+  -- | Method used to get the value of a constant component. It doesn't require
+  -- an implementation if you don't use constant components.
+  getConstValue :: comp a -> a
+  -- | Method used to by the synthesis procedure to set the value of a constant
+  -- component. It doesn't require an implementation if you don't use constant
+  -- components.
+  putConstValue :: comp a -> a -> comp a
 
   compName = const ""
   extraLocConstrs = const []
-
+  getConstValue = const undefined
+  putConstValue = const
 
 -- | A simplest __specification__ datatype possible. Type variable 'a' stands
 -- for function's domain type.
@@ -90,12 +99,21 @@ instance SynthSpec SimpleSpec a where
 data SimpleComponent a = SimpleComponent {
     simpleName :: String
   , simpleSpec :: SimpleSpec a
+  , simpleVal :: a
+  }
+
+mkSimpleComp name spec = SimpleComponent {
+    simpleName = name
+  , simpleSpec = spec
+  , simpleVal = undefined
   }
 
 instance SynthComponent SimpleComponent SimpleSpec a where
   compName = simpleName
   compSpec = simpleSpec
   extraLocConstrs = const []
+  getConstValue = simpleVal
+  putConstValue comp c = comp { simpleVal = c }
 
 instance Show (SimpleComponent spec) where
   show = compName

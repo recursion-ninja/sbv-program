@@ -1,10 +1,20 @@
+--
+-- | These examples can from GHCi by importing this module.
+-- To get a human-readable pseudocode for the solution use
+--
+-- @
+-- ghci> Right res <- someExample
+-- ghci> putStrLn $ writePseudocode res
+-- @
 module Data.SBV.Program.Examples(
   -- * Reset most significant set bit
   paperRunningExampleSpec,
   paperRunningExample,
   -- * Quadratic equation
   quadEquExampleSpec,
-  quadEquExample
+  quadEquExample,
+  -- * Transform boolean formula into NAND-only expression
+  nandifyExample
 ) where
 
 import Data.List
@@ -24,7 +34,7 @@ paperRunningExampleSpec = SimpleSpec 1 $ \[i] o -> sAnd $ flip map [7,6..0] $ \t
 
 paperRunningExample = refinedExAllProcedure [Lib.and, Lib.dec] paperRunningExampleSpec
 
--- | Synthesizes a formula for the quadratic equation \(x^2 - 2*x + 1 = 0\)
+-- | Synthesizes a formula for the quadratic equation \(x^2 - 2x + 1 = 0\)
 quadEquExampleSpec :: SimpleSpec Int32
 quadEquExampleSpec = SimpleSpec 1 $ \[i] o -> sAnd [
     i .== 1 .=> o .== 0,
@@ -32,3 +42,17 @@ quadEquExampleSpec = SimpleSpec 1 $ \[i] o -> sAnd [
   ]
 
 quadEquExample = refinedExAllProcedure [Lib.mul, Lib.add, Lib.sub, Lib.inc] quadEquExampleSpec
+
+-- | Reimplement arbitrary boolean formula with only NAND components.
+-- Example usage:
+--
+-- @
+-- nandifyExample 2 (SimpleSpec 2 $ \[i1, i2] o -> o .== (i1 .&& i2))
+-- @
+nandifyExample ::
+    Int -- ^ Amount of NAND components available
+  -> SimpleSpec Bool -- ^ Specification of the desired function
+  -> IO (Either SynthesisError (Program Location (SimpleComponent Bool)))
+nandifyExample size = refinedExAllProcedure library
+  where
+    library = [Lib.const, Lib.const] ++ replicate size Lib.bNand

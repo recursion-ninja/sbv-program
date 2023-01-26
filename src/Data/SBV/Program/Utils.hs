@@ -4,6 +4,8 @@
 module Data.SBV.Program.Utils (
   sampleSpec,
 
+  isConstantComponent,
+
   mkVarName,
   mkInputLocName,
   mkOutputLocName,
@@ -35,6 +37,13 @@ sampleSpec spec = runSMT $ do
         _ -> pure Nothing
 
 
+-- | Returns 'True' if the component is a __constant__ one. Constant components
+-- have zero inputs (their 'specArity' \(=0\) ).
+isConstantComponent :: forall a comp spec . (SynthSpec spec a, SynthComponent comp spec a) =>
+     comp a
+  -> Bool
+isConstantComponent comp = specArity (compSpec comp) == 0
+
 -- | Creates sanitized variable name suitable for SBV.
 mkVarName :: String -- ^ Base name, which can be an empty string, in which case \"UnnamedComponent\" value will be used.
           -> Bool -- ^ Setting 'isLocation' to 'True' will append \"Loc\" to the name.
@@ -57,7 +66,7 @@ mkOutputVarName compName = mkVarName compName False True undefined
 
 
 -- | Renders the solution in SSA style.
-writePseudocode :: SynthComponent comp spec a => Program Location (comp a) -> String
+writePseudocode :: (Show a, SynthComponent comp spec a) => Program Location (comp a) -> String
 writePseudocode prog = unlines (header : body ++ ret)
   where
     prog' = sortInstructions prog
@@ -72,7 +81,8 @@ writePseudocode prog = unlines (header : body ++ ret)
         " = ",
         compName comp,
         " ",
-        intercalate ", " $ map writeArg _ins
+        intercalate ", " $ map writeArg _ins,
+        if isConstantComponent comp then show $ getConstValue comp else ""
         ]
     ret = ["\treturn " ++ writeArg (_out $ programIOs prog')]
     writeArg loc = '%' : show loc
