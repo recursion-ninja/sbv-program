@@ -1,5 +1,6 @@
 module Data.SBV.Program.SimpleLibrary(
     Data.SBV.Program.SimpleLibrary.const,
+    concrete,
 
     -- * Arithmetic components
     inc,
@@ -12,6 +13,8 @@ module Data.SBV.Program.SimpleLibrary(
     Data.SBV.Program.SimpleLibrary.and,
     Data.SBV.Program.SimpleLibrary.or,
     Data.SBV.Program.SimpleLibrary.not,
+    Data.SBV.Program.SimpleLibrary.shl,
+    Data.SBV.Program.SimpleLibrary.shr,
 
     -- * Logic components
     bXor,
@@ -25,6 +28,7 @@ import Data.SBV.Program.Types
 
 
 const = mkSimpleComp "const" $ SimpleSpec 0 $ \[] o -> sTrue
+concrete val = mkSimpleComp "const" $ SimpleSpec 0 $ \[] o -> o .== literal val
 
 
 inc :: (SymVal a, Ord a, Num a) => SimpleComponent a
@@ -52,6 +56,11 @@ or = mkSimpleComp "or" $ SimpleSpec 2 $ \[i1,i2] o -> o .== (i1 .|. i2)
 not :: (SymVal a, Ord a, Num a, Bits a) => SimpleComponent a
 not = mkSimpleComp "not" $ SimpleSpec 1 $ \[i1] o -> o .== complement i1
 
+shl :: (SymVal a, Ord a, Num a, Bits a, SIntegral a) => SimpleComponent a
+shl = mkSimpleComp "shl" $ SimpleSpec 2 $ \[i1,i2] o -> o .== (i1 `sShiftLeft` i2)
+
+shr :: (SymVal a, Ord a, Num a, Bits a, SIntegral a) => SimpleComponent a
+shr = mkSimpleComp "shr" $ SimpleSpec 2 $ \[i1,i2] o -> o .== (i1 `sShiftRight` i2)
 
 bXor :: SimpleComponent Bool
 bXor = mkSimpleComp "bXor" $ SimpleSpec 2 $ \[i1,i2] o -> o .== i1 .<+> i2
