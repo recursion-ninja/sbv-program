@@ -29,6 +29,10 @@ module Data.SBV.Program (
   refinedExAllProcedure,
   exAllProcedure,
 
+  standardExAllProcedureWith,
+  refinedExAllProcedureWith,
+  exAllProcedureWith,
+
   -- * Auxiliary functions that make up synthesis procedures #aux#
 
   createProgramLocs,
@@ -84,7 +88,18 @@ standardExAllProcedure :: forall a comp spec .
     -- | Specification of program being synthesized
     -> spec a
     -> IO (Either SynthesisError (Program Location (comp a)))
-standardExAllProcedure library spec = do
+standardExAllProcedure = standardExAllProcedureWith defaultSMTCfg
+
+-- | Version of 'standardExAllProcedure' that uses passed 'SMTConfig' instead of default one.
+standardExAllProcedureWith :: forall a comp spec .
+  (SymVal a, Show a, SynthSpec spec a, SynthComponent comp spec a) =>
+       SMTConfig
+    -- | Component library
+    -> [comp a]
+    -- | Specification of program being synthesized
+    -> spec a
+    -> IO (Either SynthesisError (Program Location (comp a)))
+standardExAllProcedureWith config library spec = do
   -- generate a seed for S
   mbRes <- sampleSpec spec
   case mbRes of
@@ -102,7 +117,7 @@ standardExAllProcedure library spec = do
       putStrLn "Synthesizing with s = "
       pPrint s
       -- Finite synthesis part
-      r <- runSMT $ do
+      r <- runSMTWith config $ do
         progLocs <- createProgramLocs library numInputs
 
         constrainLocs m numInputs progLocs
@@ -140,7 +155,7 @@ standardExAllProcedure library spec = do
       -- At this stage the 'currL' program represents a solution that is known to
       -- work for all values from S. We now check if this solution works for all
       -- values possible.
-      fmap join $ for r $ \currL -> runSMT $ do
+      fmap join $ for r $ \currL -> runSMTWith config $ do
         liftIO $ do
           putStrLn "Synthesis step done, current solution:"
           putStrLn $ writePseudocode currL
@@ -186,7 +201,18 @@ refinedExAllProcedure :: forall a comp spec .
     -- | Specification of program being synthesized
     -> spec a
     -> IO (Either SynthesisError (Program Location (comp a)))
-refinedExAllProcedure library spec = do
+refinedExAllProcedure = refinedExAllProcedureWith defaultSMTCfg
+
+-- | Version of 'refinedExAllProcedure' that uses passed 'SMTConfig' instead of default one.
+refinedExAllProcedureWith :: forall a comp spec .
+  (SymVal a, SynthSpec spec a, SynthComponent comp spec a) =>
+       SMTConfig
+    -- | Component library
+    -> [comp a]
+    -- | Specification of program being synthesized
+    -> spec a
+    -> IO (Either SynthesisError (Program Location (comp a)))
+refinedExAllProcedureWith config library spec = do
   mbRes <- sampleSpec spec
   case mbRes of
     Nothing -> return $ Left ErrorSeedingFailed
@@ -197,7 +223,7 @@ refinedExAllProcedure library spec = do
     m = n + numInputs
     go s = do
       -- Finite synthesis part
-      r <- runSMT $ do
+      r <- runSMTWith config $ do
         progLocs <- createProgramLocs library numInputs
 
         constrainLocs m numInputs progLocs
@@ -254,7 +280,7 @@ refinedExAllProcedure library spec = do
       -- At this stage the 'currL' program represents a solution that is known to
       -- work for all values from S. We now check if this solution works for all
       -- values possible.
-      fmap join $ for r $ \(currL, constantVals) -> runSMT $ do
+      fmap join $ for r $ \(currL, constantVals) -> runSMTWith config $ do
         progLocs <- createProgramLocs library numInputs
 
         -- In the verification part we pin location variables L
@@ -301,10 +327,21 @@ exAllProcedure :: forall a comp spec .
     -- | Specification of program being synthesized
     -> spec a
     -> IO (Either SynthesisError (Program Location (comp a)))
-exAllProcedure library spec =
+exAllProcedure = exAllProcedureWith defaultSMTCfg
+
+-- | Version of 'exAllProcedure' that uses passed 'SMTConfig' instead of default one.
+exAllProcedureWith :: forall a comp spec .
+  (SymVal a, SynthSpec spec a, SynthComponent comp spec a) =>
+       SMTConfig
+    -- | Component library
+    -> [comp a]
+    -- | Specification of program being synthesized
+    -> spec a
+    -> IO (Either SynthesisError (Program Location (comp a)))
+exAllProcedureWith config library spec =
   -- run SBV with 'allowQuantifiedQueries' to silence warnings about entering
   -- 'query' mode in presence of universally quantified variables
-  runSMTWith (defaultSMTCfg {allowQuantifiedQueries = True}) $ do
+  runSMTWith (config {allowQuantifiedQueries = True}) $ do
     let n = genericLength library
         numInputs = specArity spec
         m = n + numInputs
