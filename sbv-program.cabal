@@ -27,7 +27,6 @@ library
       Data.SBV.Program.SimpleLibrary
       Data.SBV.Program.Types
       Data.SBV.Program.Utils
-      Data.SBV.Program.MyDefs
   hs-source-dirs:
       src
   build-depends:
