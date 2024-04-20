@@ -1,4 +1,4 @@
-cabal-version: >= 1.10
+cabal-version: 3.8
 
 name:           sbv-program
 version:        1.1.0.0
@@ -10,7 +10,7 @@ bug-reports:    https://github.com/arrowd/sbv-program/issues
 author:         Gleb Popov
 maintainer:     6yearold@gmail.com
 copyright:      2023 Gleb Popov
-license:        BSD3
+license:        BSD-3-Clause
 license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
@@ -27,17 +27,26 @@ library
       Data.SBV.Program.SimpleLibrary
       Data.SBV.Program.Types
       Data.SBV.Program.Utils
+      Data.SBV.Program.MyDefs
   hs-source-dirs:
       src
   build-depends:
-      base < 5
-      , bifunctors    >= 5.5.13 && < 5.6
-      , containers    >= 0.6.5 && < 0.7
-      , pretty-simple >= 4.1.2 && < 4.2
-      , sbv           >= 9.0 && < 9.1
+      base >= 4.18.0.0 && < 5,
+      containers >= 0.6.5 && < 0.8,
+      pretty-simple >= 4.1.2 && < 5.0,
+      sbv >= 9.0 && < 11.0,
+      vector,
   default-extensions:
+      BangPatterns
+      DerivingStrategies
+      ImportQualifiedPost
+      LambdaCase
+      NoGeneralizedNewtypeDeriving
       RecordWildCards
-  default-language: Haskell2010
+      RoleAnnotations
+      UnicodeSyntax
+  default-language:
+      GHC2021
 
 test-suite smoketest
   hs-source-dirs:
